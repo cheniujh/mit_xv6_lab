@@ -45,7 +45,7 @@ kvmmake(void)
 
   // allocate and map a kernel stack for each process.
   proc_mapstacks(kpgtbl);
-  
+
   return kpgtbl;
 }
 
@@ -154,7 +154,7 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 
   if(size == 0)
     panic("mappages: size");
-  
+
   a = va;
   last = va + size - PGSIZE;
   for(;;){
@@ -345,12 +345,51 @@ void
 uvmclear(pagetable_t pagetable, uint64 va)
 {
   pte_t *pte;
-  
+
   pte = walk(pagetable, va, 0);
   if(pte == 0)
     panic("uvmclear");
   *pte &= ~PTE_U;
 }
+
+// print all the mapping in a given page table
+void
+vmprint(pagetable_t pagetable, int depth)
+{
+    char intented[64];
+    int index = 0;
+    for(int i = 0; i < depth + 1; i++){
+        if(index > 63){
+            panic("vmprint: intented outrange");
+        }
+        intented[index++] = '.';
+        intented[index++] = '.';
+        if(i < depth - 1){
+            intented[index++] = ' ';
+        }
+    }
+    intented[index] = '\0';
+
+    if(depth == 0){
+        printf("page table %p\n", pagetable);
+    }
+
+    for(int i = 0; i < 512; i++){
+        //(先check是否valid) 打印，如果该pte是父，继续递归，如果不是就不递归
+        pte_t pte = pagetable[i];
+        if((pte & PTE_V) == 0){
+            //not a valid pte, just skip
+            continue;
+        }
+        //this pte is valid
+        printf("%s%d: pte %p pa %p\n", intented, i, pte, PTE2PA(pte));
+        //if it's a father page table, recursively call vmprint
+        if((pte & (PTE_R | PTE_W | PTE_X)) == 0){
+            vmprint((pagetable_t)PTE2PA(pte), depth + 1);
+        }
+    }
+}
+
 
 // Copy from kernel to user.
 // Copy len bytes from src to virtual address dstva in a given page table.

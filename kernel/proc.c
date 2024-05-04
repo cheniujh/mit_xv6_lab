@@ -39,6 +39,7 @@ proc_mapstacks(pagetable_t kpgtbl)
     if(pa == 0)
       panic("kalloc");
     uint64 va = KSTACK((int) (p - proc));
+//    这个映射似乎是在kernel page table中的加的，ing射到了一个物理页上
     kvmmap(kpgtbl, va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
   }
 }
@@ -131,6 +132,15 @@ found:
     release(&p->lock);
     return 0;
   }
+#ifdef LAB_PGTBL
+    // Allocate a usyscall page.
+    if((p->usyscall = (struct usyscall *)kalloc()) == 0){
+        freeproc(p);
+        release(&p->lock);
+        return 0;
+    }
+    p->usyscall->pid = p->pid;
+#endif
 
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
@@ -158,6 +168,11 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+#ifdef LAB_PGTBL
+  if(p->usyscall)
+      kfree((void*)p->usyscall);
+  p->usyscall = 0;
+#endif
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
@@ -202,6 +217,12 @@ proc_pagetable(struct proc *p)
     return 0;
   }
 
+  if(mappages(pagetable, USYSCALL, PGSIZE, (uint64)(p->usyscall), PTE_U | PTE_R) < 0){
+      uvmunmap(pagetable, TRAMPOLINE, 1, 0);
+      uvmunmap(pagetable, TRAPFRAME, 1, 0);
+      uvmfree(pagetable, 0);
+      return 0;
+  }
   return pagetable;
 }
 
@@ -212,6 +233,7 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
 {
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
+  uvmunmap(pagetable, USYSCALL, 1, 0);
   uvmfree(pagetable, sz);
 }
 
@@ -232,6 +254,7 @@ uchar initcode[] = {
 void
 userinit(void)
 {
+    printf("hi there1\n");
   struct proc *p;
 
   p = allocproc();
